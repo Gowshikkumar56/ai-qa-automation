@@ -1,21 +1,49 @@
 
 const express = require('express');
+const crypto = require('crypto');
 const { crawlWebsite } = require('./crawler');
 
 const app = express();
 
 app.use(express.json({ limit: '2mb' }));
 
+// API key authentication
+function authenticateApiKey(req, res, next) {
+    const apiKey = process.env.API_KEY;
+    const providedKey = req.headers['x-api-key'];
+
+    if (!apiKey) {
+        return res.status(500).json({
+            error: 'API key is not configured'
+        });
+    }
+
+    if (
+        !providedKey ||
+        Buffer.byteLength(providedKey) !== Buffer.byteLength(apiKey) ||
+        !crypto.timingSafeEqual(
+            Buffer.from(providedKey),
+            Buffer.from(apiKey)
+        )
+    ) {
+        return res.status(401).json({
+            error: 'Unauthorized: Invalid API key'
+        });
+    }
+
+    next();
+}
+
 // Health check
-app.get('/', (req, res) => {
+app.get('/healthz', (req, res) => {
     res.json({
         status: 'running',
-        service: 'AI QA Automation - Playwright Crawler'
+        service: 'AI QA Automation'
     });
 });
 
 // Website crawling API
-app.post('/crawl', async (req, res) => {
+app.post('/crawl', authenticateApiKey, async (req, res) => {
     try {
         const {
             projectName,
@@ -30,6 +58,14 @@ app.post('/crawl', async (req, res) => {
         if (!websiteURL) {
             return res.status(400).json({
                 error: 'websiteURL is required'
+            });
+        }
+
+        const parsedURL = new URL(websiteURL);
+
+        if (!['http:', 'https:'].includes(parsedURL.protocol)) {
+            return res.status(400).json({
+                error: 'Only HTTP and HTTPS URLs are allowed'
             });
         }
 
